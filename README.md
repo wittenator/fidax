@@ -22,7 +22,7 @@ uv sync --frozen
 
 or install it directly as a dependency with e.g. uv:
 ```
-uv add git+https://github.com/wittenator/fidax.git
+uv add fidax
 ```
 
 ## Quick Start
