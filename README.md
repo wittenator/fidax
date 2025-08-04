@@ -1,6 +1,6 @@
 # FIDax
 
-A high-performance JAX implementation of the Fréchet Inception Distance (FID) metric for evaluating generative models.
+A JAX implementation of the Fréchet Inception Distance (FID) metric for evaluating generative models in form of a sklearn-compatible metric.
 
 ## Features
 
@@ -111,4 +111,9 @@ Tests verify:
 
 ## License
 
-Apache 2.o License - see [`LICENSE`](LICENSE) for details.
+Apache 2.0 License - see [`LICENSE`](LICENSE) for details.
+
+## Related Projects
+
+- **[jax-fid-parallel](https://github.com/kvfrans/jax-fid-parallel)** - Parallel implementation of FID computation in JAX
+- **[jax-fid](https://github.com/matthias-wright/jax-fid)** - Original JAX implementation of FID that inspired this project
