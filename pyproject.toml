@@ -1,7 +1,7 @@
 [project]
 name = "fidax"
 version = "0.1.0"
-description = "Add your description here"
+description = "An sklearn-style FID metric class for Jax"
 readme = "README.md"
 authors = [
     { name = "wittenator", email = "9154515+wittenator@users.noreply.github.com" }
@@ -13,6 +13,10 @@ dependencies = [
     "jaxlib>=0.5.3",
     "requests>=2.32.4",
 ]
+
+[project.urls]
+Homepage = "https://github.com/wittenator/fidax"
+Issues = "https://github.com/wittenator/fidax/issues"
 
 [build-system]
 requires = ["hatchling"]
@@ -99,11 +103,6 @@ select = ["ALL"]
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**/*.py" = ["S101", "ARG", "FBT"]
-
-[tool.pytest.ini_options]
-testpaths = [
-    "scripts/tests",
-]
 
 [dependency-groups]
 dev = [
