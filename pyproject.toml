@@ -1,0 +1,112 @@
+[project]
+name = "fidax"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "wittenator", email = "9154515+wittenator@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "flax>=0.10.6",
+    "jax[cuda12]>=0.5.3",
+    "jaxlib>=0.5.3",
+    "requests>=2.32.4",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 119
+indent-width = 4
+
+[tool.ruff.lint]
+ignore = [
+    "ANN001",
+    "ANN002",
+    "ANN003",
+    "ANN401",
+    "D413",
+    "COM812",
+    "D100",
+    "D103",
+    "D104",
+    "D105",
+    "D107",
+    "D205",
+    "PD901",
+    "D400",
+    "D401",
+    "D415",
+    "FA",
+    "SLF",
+    "INP",
+    "TRY003",
+    "TRY201",
+    "EM",
+    "FBT",
+    "RET",
+    "C406",
+    "E501",
+    "E741",
+    "PLR2004",
+    "RUF009",
+    "RUF012",
+    "BLE001",
+    "N817",
+    "N812",
+    "S603",
+    "S607",
+    "S506",
+    "FIX002",
+    "NPY002",
+    "G004",
+    "S311",
+    "PIE790",
+    "TRY400",
+    "S108",
+    "S101",
+    "W191",
+    "E111",
+    "E114",
+    "E117",
+    "D101",
+    "D102",
+    "D206",
+    "D300",
+    "Q000",
+    "Q001",
+    "Q002",
+    "Q003",
+    "COM812",
+    "COM819",
+    "D203",
+    "D213",
+    "N806",
+    "N803",
+    "E712",
+    "PLR0913",
+    "TC001",
+    "PD011",
+    "TD002",
+    "TD003",
+    "F722" ,
+    "F821" ,
+]
+select = ["ALL"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**/*.py" = ["S101", "ARG", "FBT"]
+
+[tool.pytest.ini_options]
+testpaths = [
+    "scripts/tests",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.1",
+    "torchmetrics[image]>=1.8.0",
+]

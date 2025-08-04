@@ -1,0 +1,47 @@
+FIDax
+Copyright 2025 wittenator
+
+This product includes software developed by wittenator.
+
+This project contains code derived from the following third-party sources:
+
+1. jax-fid
+   Copyright 2021 Matthias Wright
+   Licensed under the Apache License, Version 2.0
+   Source: https://github.com/matthias-wright/jax-fid
+
+   The Inception V3 implementation in src/fidax/inception.py is derived from
+   https://github.com/matthias-wright/jax-fid/blob/main/jax_fid/inception.py
+
+
+2. jax-diffusion-transformer
+   Copyright 2023 Kevin Frans
+   Licensed under the Apache License, Version 2.0
+   Source: https://github.com/kvfrans/jax-diffusion-transformer
+
+   Additional reference for FID evaluation utilities.
+
+3. pytorch-fid
+   The jax-fid implementation is itself a port of pytorch-fid
+   Source: https://github.com/mseitzer/pytorch-fid
+
+4. TTUR (Original FID Implementation)
+   The FID implementation traces back to the original TTUR implementation
+   Source: https://github.com/bioinf-jku/TTUR
+
+5. InceptionV3 Network
+   Reference: "Rethinking the Inception Architecture for Computer Vision"
+   arXiv:1512.00567
+   The InceptionV3 network parameters are derived from the PyTorch Vision implementation.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
