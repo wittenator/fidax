@@ -1,9 +1,11 @@
+from typing import Any
+
 import jax
 import jax.numpy as jnp
 from flax import nnx
 from flax.nnx.training.metrics import MetricState
 
-from src.fidax.inception import get_fid_network
+from fidax.inception import get_fid_network
 
 
 class FrechetInceptionDistance(nnx.Metric):
@@ -39,7 +41,7 @@ class FrechetInceptionDistance(nnx.Metric):
         self.fake_count = MetricState(jnp.array(0))
 
     @nnx.jit(static_argnames=("real",))
-    def update(self, imgs, real: bool) -> None:
+    def update(self, imgs, real: bool, **kwargs: Any) -> None:
         """Update the metric with new images.
 
         Args:
@@ -49,6 +51,10 @@ class FrechetInceptionDistance(nnx.Metric):
         # Handle grayscale images by repeating channels to RGB
         if imgs.shape[-1] == 1:
             imgs = jnp.repeat(imgs, 3, axis=-1)
+
+        imgs = jax.image.resize(
+            imgs, (imgs.shape[0], 299, 299, 3), method="bilinear"
+        )  # Resize to InceptionV3 input size
 
         # Extract features using InceptionV3
         acts = self.model(imgs, train=False)[..., 0, 0, :].astype(self.metric_dtype)  # [N, 2048]
@@ -67,8 +73,6 @@ class FrechetInceptionDistance(nnx.Metric):
         """Compute the FID score between real and fake image distributions."""
         real_acts = self.real_acts.value[: self.real_count.value]
         fake_acts = self.fake_acts.value[: self.fake_count.value]
-
-        print(f"Real acts shape: {self.fake_count}")
 
         mu1 = jnp.mean(fake_acts, axis=0)
         sigma1 = jnp.cov(fake_acts, rowvar=False)
