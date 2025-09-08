@@ -47,9 +47,9 @@ Dtype = Any
 #######################################
 
 
-def get_fid_network(dtype: str = "float32") -> nnx.Module:
+def get_fid_network(dtype: str = "float32", ckpt_dir: str | None = "data") -> nnx.Module:
     # Returns a function with input of images in range [-1, 1], and output of 2048-length activations.
-    model = InceptionV3(pretrained=True, dtype=dtype)
+    model = InceptionV3(pretrained=True, dtype=dtype, ckpt_dir=ckpt_dir)
     model = bridge.ToNNX(model, rngs=nnx.Rngs(0))
     bridge.lazy_init(model, jnp.ones((1, 256, 256, 3)))
     return model
@@ -122,10 +122,11 @@ class InceptionV3(nn.Module):
     aux_logits: bool = False
     ckpt_path: str = "https://www.dropbox.com/s/xt6zvlvt22dcwck/inception_v3_weights_fid.pickle?dl=1"
     dtype: str = "float32"
+    ckpt_dir: str | None = "data"
 
     def setup(self):
         if self.pretrained:
-            ckpt_file = download(self.ckpt_path)
+            ckpt_file = download(self.ckpt_path, ckpt_dir=self.ckpt_dir)
             self.params_dict = pickle.load(open(ckpt_file, "rb"))
             self.num_classes_ = 1000
         else:

@@ -17,6 +17,7 @@ class FrechetInceptionDistance(nnx.Metric):
         metric_dtype=jnp.float64,
         model_dtype=jnp.float32,
         real_stats: dict | None = None,
+        weights_cache_dir: str | None = "data",
     ) -> None:
         """Initialize FID metric.
 
@@ -30,9 +31,10 @@ class FrechetInceptionDistance(nnx.Metric):
         self.real_stats = real_stats
         self.metric_dtype = metric_dtype
         self.model_dtype = model_dtype
+        self.weights_cache_dir = weights_cache_dir
 
         # Initialize feature extractor
-        self.model = get_fid_network(dtype=model_dtype)
+        self.model = get_fid_network(dtype=model_dtype, ckpt_dir=self.weights_cache_dir)
 
         # Initialize storage for activations using MetricState
         self.real_acts = MetricState(jnp.zeros((max_samples, 2048), dtype=metric_dtype))
