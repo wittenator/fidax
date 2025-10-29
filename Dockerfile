@@ -4,8 +4,8 @@ FROM ${IMAGE} as builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && \
-  apt-get install -yq build-essential wget libncurses5-dev libncursesw5-dev libssl-dev \
+RUN apt update && \
+  apt install -yq build-essential wget libncurses5-dev libncursesw5-dev libssl-dev \
   pkg-config libdrm-dev libgtest-dev libudev-dev python3-venv git
 
 # Get a recent-enough CMake
@@ -35,8 +35,8 @@ RUN groupadd --gid 1000 $_USERNAME \
     && useradd --uid 1000 --gid 1000 -m $_USERNAME \
     #
     # [Optional] Add sudo support. Omit if you don't need to install software after connecting.
-    && apt-get update \
-    && apt-get install -y sudo wget curl git htop less rsync screen vim nano wget build-essential software-properties-common python3-launchpadlib libfuse2 \
+    && apt update \
+    && apt install -y sudo wget curl git htop less rsync screen vim nano wget build-essential python3-launchpadlib libfuse2 \
     && echo $_USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$_USERNAME \
     && chmod 0440 /etc/sudoers.d/$_USERNAME \
     && rm -rf /var/lib/apt/lists/*

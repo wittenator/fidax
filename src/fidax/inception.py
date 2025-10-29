@@ -23,7 +23,8 @@ import functools
 import os
 import pickle
 import tempfile
-from typing import Any, Callable, Iterable, Optional, Tuple, Union
+from collections.abc import Callable, Iterable
+from typing import Any, Optional, Tuple, Union
 
 import flax.linen as nn
 import jax
@@ -51,7 +52,7 @@ def get_fid_network(dtype: str = "float32", ckpt_dir: str | None = "data") -> nn
     # Returns a function with input of images in range [-1, 1], and output of 2048-length activations.
     model = InceptionV3(pretrained=True, dtype=dtype, ckpt_dir=ckpt_dir)
     model = bridge.ToNNX(model, rngs=nnx.Rngs(0))
-    bridge.lazy_init(model, jnp.ones((1, 256, 256, 3)))
+    bridge.lazy_init(model, jnp.ones((1, 299, 299, 3)))
     return model
 
 
