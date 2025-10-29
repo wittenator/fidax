@@ -1,6 +1,6 @@
 [project]
 name = "fidax"
-version = "0.1.2"
+version = "0.2"
 description = "An sklearn-style FID metric class for Jax"
 readme = "README.md"
 authors = [
