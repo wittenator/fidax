@@ -10,7 +10,7 @@ def _extract_activations(model, imgs: jnp.ndarray) -> jnp.ndarray:
     """Run Inception and return [N, 2048] activations (model's dtype)."""
     # Handle grayscale images by repeating channels to RGB
     if imgs.shape[-1] == 1:
-        imgs = jnp.repeat(imgs, 3, axis=-1)
+        imgs = jnp.tile(imgs, (1, 1, 1, 3))
 
     imgs = jax.image.resize(imgs, (imgs.shape[0], 299, 299, 3), method="bilinear")
     acts = model(imgs, train=False)[..., 0, 0, :]
@@ -64,13 +64,14 @@ class FrechetInceptionDistance(nnx.Metric):
         """Update the metric with new images.
 
         Args:
-            imgs: Input images, shape [N, H, W, C], range [-1, 1]
+            imgs: Input images, shape [N, H, W, C], range [0, 1]
             real: Whether the images are real (True) or generated (False)
 
         Note:
             This method computes activations on the accelerator and aggregates
             statistics on the host, avoiding large device-resident buffers.
         """
+        imgs = imgs.astype(self.model_dtype) * 2.0 - 1.0  # Scale to [-1, 1]
         # Run model forward on device and update accumulators on device as well
         acts = _extract_activations(self.model, imgs).astype(self.metric_dtype)  # [B, D]
         nb = acts.shape[0]

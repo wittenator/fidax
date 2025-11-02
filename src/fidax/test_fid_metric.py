@@ -32,14 +32,13 @@ def test_fid_equivalence_to_torchmetrics() -> None:
     batch_size = 32
     np.random.seed(0)  # For reproducibility
     fake_imgs = np.random.uniform(size=(N, 299, 299, 3), low=-1, high=1)
+    fake_imgs = fake_imgs / 2 + 0.5
     real_imgs = np.random.uniform(size=(N, 299, 299, 3), low=-1, high=1)
+    real_imgs = real_imgs / 2 + 0.5
 
     # Torchmetrics expects [N, C, H, W] in [0, 1]
-    fake_imgs_torch = torch.from_numpy(np.array(fake_imgs)).permute(0, 3, 1, 2)
-    real_imgs_torch = torch.from_numpy(np.array(real_imgs)).permute(0, 3, 1, 2)
-    # Convert from [-1, 1] to [0, 1] range
-    fake_imgs_torch = (fake_imgs_torch + 1) / 2
-    real_imgs_torch = (real_imgs_torch + 1) / 2
+    fake_imgs_torch = torch.tensor(np.array(fake_imgs)).permute(0, 3, 1, 2)
+    real_imgs_torch = torch.tensor(np.array(real_imgs)).permute(0, 3, 1, 2)
 
     # PyTorch FID (use CUDA if available)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -90,7 +89,9 @@ def test_fid_with_precomputed_stats() -> None:
     batch_size = 64
     np.random.seed(0)  # For reproducibility
     fake_imgs = np.random.uniform(size=(N, 299, 299, 3), low=-1, high=1)
+    fake_imgs = fake_imgs / 2 + 0.5
     real_imgs = np.random.uniform(size=(N, 299, 299, 3), low=-1, high=1)
+    real_imgs = real_imgs / 2 + 0.5
 
     # First calculate regular FID to get real stats (batched)
     fid_jax = FrechetInceptionDistance(max_samples=N)
@@ -136,18 +137,22 @@ def test_fid_on_cifar10_real_vs_modified() -> None:
     # Download CIFAR-10 and select a small subset for speed
     transform = T.Compose(
         [
-            T.Resize((299, 299)),
             T.ToTensor(),
         ]
     )
     cifar10 = torchvision.datasets.CIFAR10(root="/tmp/cifar10", train=False, download=True, transform=transform)
-    N = 1024
+    N = 9984
     batch_size = 64
     real_imgs_torch = torch.stack([cifar10[i][0] for i in range(N)])  # [N, C, H, W], [0,1]
 
     # Create a modified version: add Gaussian noise
     noise = torch.randn_like(real_imgs_torch) * 0.1
     fake_imgs_torch = (real_imgs_torch + noise).clamp(0, 1)
+
+    # save one image for visual inspection
+    torchvision.utils.save_image(fake_imgs_torch[0], "./fake_cifar10_image.png")
+    # print max and min values
+    logger.info(f"Fake image max: {fake_imgs_torch[0].max().item()}")
 
     # PyTorch FID (use CUDA if available)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -167,9 +172,9 @@ def test_fid_on_cifar10_real_vs_modified() -> None:
     # clear CUDA memory
     torch.cuda.empty_cache()
 
-    # Convert to JAX format: [N, 299, 299, 3], [-1, 1]
-    real_imgs = real_imgs_torch.permute(0, 2, 3, 1).numpy() * 2 - 1
-    fake_imgs = fake_imgs_torch.permute(0, 2, 3, 1).numpy() * 2 - 1
+    # Convert to JAX format: [N, 299, 299, 3]
+    real_imgs = real_imgs_torch.permute(0, 2, 3, 1).numpy()
+    fake_imgs = fake_imgs_torch.permute(0, 2, 3, 1).numpy()
     real_imgs = jnp.array(real_imgs)
     fake_imgs = jnp.array(fake_imgs)
 
@@ -206,18 +211,21 @@ def test_fid_on_cifar10_real_vs_random_erasing() -> None:
     # Download CIFAR-10 and select a small subset for speed
     transform = T.Compose(
         [
-            T.Resize((299, 299)),
             T.ToTensor(),
         ]
     )
     cifar10 = torchvision.datasets.CIFAR10(root="/tmp/cifar10", train=False, download=True, transform=transform)
-    N = 1024
+    N = 9984
     batch_size = 64
     real_imgs_torch = torch.stack([cifar10[i][0] for i in range(N)])  # [N, C, H, W], [0,1]
 
     # Create a modified version: apply RandomErasing
     random_erasing = T2.RandomErasing(p=1.0, scale=(0.2, 0.4), ratio=(0.3, 3.3))
     fake_imgs_torch = torch.stack([random_erasing(img) for img in real_imgs_torch])
+    # save one image for visual inspection
+    torchvision.utils.save_image(fake_imgs_torch[0], "./erased_fake_cifar10_image.png")
+    # print max and min values
+    logger.info(f"Fake image max: {fake_imgs_torch[0].max().item()}")
 
     # PyTorch FID (use CUDA if available)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -238,8 +246,8 @@ def test_fid_on_cifar10_real_vs_random_erasing() -> None:
     torch.cuda.empty_cache()
 
     # Convert to JAX format: [N, 299, 299, 3], [-1, 1]
-    real_imgs = real_imgs_torch.permute(0, 2, 3, 1).numpy() * 2 - 1
-    fake_imgs = fake_imgs_torch.permute(0, 2, 3, 1).numpy() * 2 - 1
+    real_imgs = real_imgs_torch.permute(0, 2, 3, 1).numpy()
+    fake_imgs = fake_imgs_torch.permute(0, 2, 3, 1).numpy()
     real_imgs = jnp.array(real_imgs)
     fake_imgs = jnp.array(fake_imgs)
 
