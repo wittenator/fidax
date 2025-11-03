@@ -24,7 +24,7 @@ import os
 import pickle
 import tempfile
 from collections.abc import Callable, Iterable
-from typing import Any, Optional, Tuple, Union
+from typing import Any
 
 import flax.linen as nn
 import jax
@@ -35,13 +35,8 @@ from flax.linen.module import merge_param
 from flax.nnx import bridge
 from jax import lax
 from jax.nn import initializers
+from jaxtyping import Array, Float, Int, PRNGKeyArray
 from tqdm import tqdm
-
-PRNGKey = Any
-Array = Any
-Shape = Tuple[int]
-Dtype = Any
-
 
 #######################################
 ######## FID Utilities.
@@ -62,7 +57,7 @@ def get_fid_network(dtype: str = "float32", ckpt_dir: str | None = "data") -> nn
 #######################################
 
 
-def download(url, ckpt_dir="data"):
+def download(url: str, ckpt_dir: str | None = "data") -> str:
     name = url[url.rfind("/") + 1 : url.rfind("?")]
     if ckpt_dir is None:
         ckpt_dir = tempfile.gettempdir()
@@ -94,7 +89,7 @@ def download(url, ckpt_dir="data"):
     return ckpt_file
 
 
-def get(dictionary, key):
+def get(dictionary: dict | None, key: str):
     if dictionary is None or key not in dictionary:
         return None
     return dictionary[key]
@@ -135,13 +130,20 @@ class InceptionV3(nn.Module):
             self.num_classes_ = self.num_classes
 
     @nn.compact
-    def __call__(self, x, train=True, rng=jax.random.PRNGKey(0)):
+    def __call__(
+        self,
+        x: Float[Array, "batch h w c"],
+        train: bool = True,
+        rng: PRNGKeyArray = None,
+    ) -> Array | tuple[Array, Array]:
         """
         Args:
             x (tensor): Input image, shape [B, H, W, C].
             train (bool): If True, training mode.
-            rng (jax.random.PRNGKey): Random seed.
+            rng (jax.random.PRNGKeyArray): Random seed.
         """
+        if rng is None:
+            rng = jax.random.PRNGKey(0)
         x = self._transform_input(x)
         x = BasicConv2d(
             out_channels=32,
@@ -197,7 +199,7 @@ class InceptionV3(nn.Module):
             return x, aux
         return x
 
-    def _transform_input(self, x):
+    def _transform_input(self, x: Float[Array, "batch h w c"]) -> Float[Array, "batch h w c"]:
         if self.transform_input:
             x_ch0 = jnp.expand_dims(x[..., 0], axis=-1) * (0.229 / 0.5) + (0.485 - 0.5) / 0.5
             x_ch1 = jnp.expand_dims(x[..., 1], axis=-1) * (0.224 / 0.5) + (0.456 - 0.5) / 0.5
@@ -214,7 +216,7 @@ class Dense(nn.Module):
     dtype: str = "float32"
 
     @nn.compact
-    def __call__(self, x):
+    def __call__(self, x: Float[Array, "batch ..."]) -> Array:
         x = nn.Dense(
             features=self.features,
             kernel_init=self.kernel_init
@@ -227,9 +229,9 @@ class Dense(nn.Module):
 
 class BasicConv2d(nn.Module):
     out_channels: int
-    kernel_size: Union[int, Iterable[int]] = (3, 3)
-    strides: Optional[Iterable[int]] = (1, 1)
-    padding: Union[str, Iterable[Tuple[int, int]]] = "valid"
+    kernel_size: int | Iterable[int] = (3, 3)
+    strides: Iterable[int] | None = (1, 1)
+    padding: str | Iterable[tuple[int, int]] = "valid"
     use_bias: bool = False
     kernel_init: functools.partial = nn.initializers.lecun_normal()
     bias_init: functools.partial = nn.initializers.zeros
@@ -237,7 +239,7 @@ class BasicConv2d(nn.Module):
     dtype: str = "float32"
 
     @nn.compact
-    def __call__(self, x, train=True):
+    def __call__(self, x: Array, train: bool = True) -> Array:
         x = nn.Conv(
             features=self.out_channels,
             kernel_size=self.kernel_size,
@@ -275,7 +277,7 @@ class InceptionA(nn.Module):
     dtype: str = "float32"
 
     @nn.compact
-    def __call__(self, x, train=True):
+    def __call__(self, x: Array, train: bool = True) -> Array:
         branch1x1 = BasicConv2d(
             out_channels=64, kernel_size=(1, 1), params_dict=get(self.params_dict, "branch1x1"), dtype=self.dtype
         )(x, train)
@@ -325,7 +327,7 @@ class InceptionB(nn.Module):
     dtype: str = "float32"
 
     @nn.compact
-    def __call__(self, x, train=True):
+    def __call__(self, x: Array, train: bool = True) -> Array:
         branch3x3 = BasicConv2d(
             out_channels=384,
             kernel_size=(3, 3),
@@ -364,7 +366,7 @@ class InceptionC(nn.Module):
     dtype: str = "float32"
 
     @nn.compact
-    def __call__(self, x, train=True):
+    def __call__(self, x: Array, train: bool = True) -> Array:
         branch1x1 = BasicConv2d(
             out_channels=192, kernel_size=(1, 1), params_dict=get(self.params_dict, "branch1x1"), dtype=self.dtype
         )(x, train)
@@ -439,7 +441,7 @@ class InceptionD(nn.Module):
     dtype: str = "float32"
 
     @nn.compact
-    def __call__(self, x, train=True):
+    def __call__(self, x: Array, train: bool = True) -> Array:
         branch3x3 = BasicConv2d(
             out_channels=192, kernel_size=(1, 1), params_dict=get(self.params_dict, "branch3x3_1"), dtype=self.dtype
         )(x, train)
@@ -488,7 +490,7 @@ class InceptionE(nn.Module):
     dtype: str = "float32"
 
     @nn.compact
-    def __call__(self, x, train=True):
+    def __call__(self, x: Array, train: bool = True) -> Array:
         branch1x1 = BasicConv2d(
             out_channels=320, kernel_size=(1, 1), params_dict=get(self.params_dict, "branch1x1"), dtype=self.dtype
         )(x, train)
@@ -555,7 +557,7 @@ class InceptionAux(nn.Module):
     dtype: str = "float32"
 
     @nn.compact
-    def __call__(self, x, train=True):
+    def __call__(self, x: Array, train: bool = True) -> Array:
         x = avg_pool(x, window_shape=(5, 5), strides=(3, 3))
         x = BasicConv2d(
             out_channels=128, kernel_size=(1, 1), params_dict=get(self.params_dict, "conv0"), dtype=self.dtype
@@ -569,27 +571,27 @@ class InceptionAux(nn.Module):
         return x
 
 
-def _absolute_dims(rank, dims):
+def _absolute_dims(rank: int, dims: Iterable[int]) -> tuple[int, ...]:
     return tuple([rank + dim if dim < 0 else dim for dim in dims])
 
 
 class BatchNorm(nn.Module):
-    use_running_average: Optional[bool] = None
+    use_running_average: bool | None = None
     axis: int = -1
     momentum: float = 0.99
     epsilon: float = 1e-5
-    dtype: Dtype = jnp.float32
+    dtype: jnp.dtype = jnp.float32
     use_bias: bool = True
     use_scale: bool = True
-    bias_init: Callable[[PRNGKey, Shape, Dtype], Array] = initializers.zeros
-    scale_init: Callable[[PRNGKey, Shape, Dtype], Array] = initializers.ones
-    mean_init: Callable[[Shape], Array] = lambda s: jnp.zeros(s, jnp.float32)
-    var_init: Callable[[Shape], Array] = lambda s: jnp.ones(s, jnp.float32)
-    axis_name: Optional[str] = None
+    bias_init: Callable[[PRNGKeyArray, tuple[int, ...], jnp.dtype], Array] = initializers.zeros
+    scale_init: Callable[[PRNGKeyArray, tuple[int, ...], jnp.dtype], Array] = initializers.ones
+    mean_init: Callable[[tuple[int, ...]], Array] = lambda s: jnp.zeros(s, jnp.float32)
+    var_init: Callable[[tuple[int, ...]], Array] = lambda s: jnp.ones(s, jnp.float32)
+    axis_name: str | None = None
     axis_index_groups: Any = None
 
     @nn.compact
-    def __call__(self, x, use_running_average: Optional[bool] = None):
+    def __call__(self, x: jnp.ndarray, use_running_average: bool | None = None) -> jnp.ndarray:
         use_running_average = merge_param("use_running_average", self.use_running_average, use_running_average)
         x = jnp.asarray(x, jnp.float32)
         axis = self.axis if isinstance(self.axis, tuple) else (self.axis,)
@@ -632,7 +634,14 @@ class BatchNorm(nn.Module):
         return jnp.asarray(y, self.dtype)
 
 
-def pool(inputs, init, reduce_fn, window_shape, strides, padding):
+def pool(
+    inputs: jnp.ndarray,
+    init: float,
+    reduce_fn: Callable,
+    window_shape: tuple[int, ...],
+    strides: tuple[int, ...] | None,
+    padding: str | Iterable[tuple[int, int]],
+) -> jnp.ndarray:
     strides = strides or (1,) * len(window_shape)
     assert len(window_shape) == len(strides), f"len({window_shape}) == len({strides})"
     strides = (1,) + strides + (1,)
@@ -659,7 +668,12 @@ def pool(inputs, init, reduce_fn, window_shape, strides, padding):
     return y
 
 
-def avg_pool(inputs, window_shape, strides=None, padding="VALID"):
+def avg_pool(
+    inputs: jnp.ndarray,
+    window_shape: tuple[int, int],
+    strides: tuple[int, int] | None = None,
+    padding: str | Iterable[tuple[int, int]] = "VALID",
+) -> jnp.ndarray:
     assert inputs.ndim == 4
     assert len(window_shape) == 2
 

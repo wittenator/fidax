@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, TypedDict
+
 import jax
 import jax.numpy as jnp
 from flax import nnx
@@ -5,8 +9,18 @@ from flax.nnx.training.metrics import MetricState
 
 from fidax.inception import get_fid_network
 
+if TYPE_CHECKING:
+    from jaxtyping import Array, ArrayLike, Float, Int
 
-def _extract_activations(model, imgs: jnp.ndarray) -> jnp.ndarray:
+
+class Stats(TypedDict):
+    """Typed container for real/fake distribution statistics used by FID."""
+
+    mu: Float[Array, "feat"]
+    sigma: Float[Array, "feat feat"]
+
+
+def _extract_activations(model, imgs: Float[Array, "batch h w c"]) -> Float[Array, "batch 2048"]:
     """Run Inception and return [N, 2048] activations (model's dtype)."""
     # Handle grayscale images by repeating channels to RGB
     if imgs.shape[-1] == 1:
@@ -22,28 +36,25 @@ class FrechetInceptionDistance(nnx.Metric):
 
     def __init__(
         self,
-        max_samples: int = 50000,
-        metric_dtype=jnp.float64,
-        model_dtype=jnp.float32,
-        real_stats: dict | None = None,
+        metric_dtype: jnp.dtype = jnp.float64,
+        model_dtype: str = "float32",
+        real_stats: Stats | None = None,
         weights_cache_dir: str | None = "data",
     ) -> None:
         """Initialize FID metric.
 
         Args:
-            max_samples: Maximum number of samples to store
             metric_dtype: Data type for computations for model execution and metric computation (default: jnp.float64)
-            model_dtype: Data type for the model (default: jnp.float64)
+            model_dtype: Data type for the model (default: jnp.float32)
             real_stats: Pre-computed statistics for real images (mu and sigma)
             weights_cache_dir: Directory to cache/download Inception weights
         """
-        self.max_samples = max_samples
         self.real_stats = real_stats
         self.metric_dtype = metric_dtype
         self.model_dtype = model_dtype
         self.weights_cache_dir = weights_cache_dir
 
-        # Initialize feature extractor (runs on accelerator)
+        # Initialize feature extractor
         self.model = get_fid_network(dtype=model_dtype, ckpt_dir=self.weights_cache_dir)
 
         # Dimension of Inception feature activations
@@ -60,12 +71,13 @@ class FrechetInceptionDistance(nnx.Metric):
         self._fake_M2 = MetricState(jnp.zeros((self._feat_dim, self._feat_dim), dtype=self.metric_dtype))
 
     @nnx.jit(static_argnames=("real",))
-    def update(self, imgs, real: bool) -> None:
+    def update(self, imgs: Float[ArrayLike, "batch h w c"], real: bool, **kwargs: Any) -> None:  # noqa: ARG002, D417, RUF100
         """Update the metric with new images.
 
         Args:
             imgs: Input images, shape [N, H, W, C], range [0, 1]
             real: Whether the images are real (True) or generated (False)
+            kwargs: Additional keyword arguments (unused)
 
         Note:
             This method computes activations on the accelerator and aggregates
@@ -128,7 +140,12 @@ class FrechetInceptionDistance(nnx.Metric):
 
     @staticmethod
     @jax.jit
-    def _fid_from_stats(mu1, sigma1, mu2, sigma2) -> jnp.ndarray:
+    def _fid_from_stats(
+        mu1: Float[Array, "feat"],
+        sigma1: Float[Array, "feat feat"],
+        mu2: Float[Array, "feat"],
+        sigma2: Float[Array, "feat feat"],
+    ) -> Float[Array, ""]:
         """Compute FID score from distribution statistics.
 
         Adapted from https://github.com/Lightning-AI/torchmetrics/blob/27e1dbe39ac50d6c84f72a16afbb7bf1eb19221e/src/torchmetrics/image/fid.py
@@ -155,8 +172,11 @@ class FrechetInceptionDistance(nnx.Metric):
     # Helper methods (host-side)
     # --------------------
     def _stats_from_accumulators_jax(
-        self, n: jnp.ndarray, mean: jnp.ndarray, M2: jnp.ndarray
-    ) -> tuple[jnp.ndarray, jnp.ndarray]:
+        self,
+        n: Int[Array, ""],
+        mean: Float[Array, "feat"],
+        M2: Float[Array, "feat feat"],
+    ) -> tuple[Float[Array, "feat"], Float[Array, "feat feat"]]:
         """Return (mu, sigma) from accumulators on device; ddof=1 if n>1, else zeros."""
         n = jnp.asarray(n)
         n_f = n.astype(self.metric_dtype)
@@ -165,10 +185,10 @@ class FrechetInceptionDistance(nnx.Metric):
         return mu, sigma
 
     # Public helpers for tests and external use
-    def get_real_stats(self) -> tuple[jnp.ndarray, jnp.ndarray]:
+    def get_real_stats(self) -> tuple[Float[Array, "feat"], Float[Array, "feat feat"]]:
         return self._stats_from_accumulators_jax(self._real_n.value, self._real_mean.value, self._real_M2.value)
 
-    def get_fake_stats(self) -> tuple[jnp.ndarray, jnp.ndarray]:
+    def get_fake_stats(self) -> tuple[Float[Array, "feat"], Float[Array, "feat feat"]]:
         return self._stats_from_accumulators_jax(self._fake_n.value, self._fake_mean.value, self._fake_M2.value)
 
     @property

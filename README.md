@@ -34,7 +34,7 @@ import jax.numpy as jnp
 from fidax.fid import FrechetInceptionDistance
 
 # Initialize FID metric
-fid = FrechetInceptionDistance(max_samples=100)
+fid = FrechetInceptionDistance()
 
 # Update with real images (shape: [N, 299, 299, 3], range: [-1, 1])
 real_images = jnp.random.uniform(-1, 1, (100, 299, 299, 3))
@@ -60,7 +60,7 @@ real_stats = {
     "sigma": sigma_real # Covariance of real activations
 }
 
-fid = FrechetInceptionDistance(max_samples=1000, real_stats=real_stats)
+fid = FrechetInceptionDistance(real_stats=real_stats)
 # Only need to update with fake images
 fid.update(fake_images, real=False)
 ```

@@ -16,8 +16,10 @@ import torchmetrics
 import torchvision
 import torchvision.transforms as T
 import torchvision.transforms.v2 as T2
+from jaxtyping import install_import_hook
 
-from fidax.fid import FrechetInceptionDistance
+with install_import_hook("scripts", "typeguard.typechecked"):
+    from fidax.fid import FrechetInceptionDistance
 
 # activate fp64
 jax.config.update("jax_enable_x64", True)
@@ -56,7 +58,7 @@ def test_fid_equivalence_to_torchmetrics() -> None:
     torch.cuda.empty_cache()
 
     # JAX FrechetInceptionDistance (NNX style)
-    fid_jax = FrechetInceptionDistance(max_samples=N)
+    fid_jax = FrechetInceptionDistance()
     t0 = time.perf_counter()
     for i in range(0, N, batch_size):
         fid_jax.update(real_imgs[i : i + batch_size], True)
@@ -94,7 +96,7 @@ def test_fid_with_precomputed_stats() -> None:
     real_imgs = real_imgs / 2 + 0.5
 
     # First calculate regular FID to get real stats (batched)
-    fid_jax = FrechetInceptionDistance(max_samples=N)
+    fid_jax = FrechetInceptionDistance()
     t0 = time.perf_counter()
     for i in range(0, N, batch_size):
         fid_jax.update(real_imgs[i : i + batch_size], True)
@@ -105,7 +107,7 @@ def test_fid_with_precomputed_stats() -> None:
     real_stats = {"mu": mu_real, "sigma": sigma_real}
 
     # Now create new FID with pre-computed stats (batched)
-    fid_jax_precomputed = FrechetInceptionDistance(max_samples=N, real_stats=real_stats)
+    fid_jax_precomputed = FrechetInceptionDistance(real_stats=real_stats)
     t0 = time.perf_counter()
     for i in range(0, N, batch_size):
         fid_jax_precomputed.update(fake_imgs[i : i + batch_size], False)
@@ -179,7 +181,7 @@ def test_fid_on_cifar10_real_vs_modified() -> None:
     fake_imgs = jnp.array(fake_imgs)
 
     # JAX FID (batched)
-    fid_jax = FrechetInceptionDistance(max_samples=N)
+    fid_jax = FrechetInceptionDistance()
     t0 = time.perf_counter()
     for i in range(0, N, batch_size):
         fid_jax.update(real_imgs[i : i + batch_size], True)
@@ -252,7 +254,7 @@ def test_fid_on_cifar10_real_vs_random_erasing() -> None:
     fake_imgs = jnp.array(fake_imgs)
 
     # JAX FID (batched)
-    fid_jax = FrechetInceptionDistance(max_samples=N)
+    fid_jax = FrechetInceptionDistance()
     t0 = time.perf_counter()
     for i in range(0, N, batch_size):
         fid_jax.update(real_imgs[i : i + batch_size], True)

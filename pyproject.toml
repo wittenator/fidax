@@ -12,6 +12,7 @@ dependencies = [
     "jax[cuda12]>=0.5.3",
     "jaxlib>=0.5.3",
     "requests>=2.32.4",
+    "jaxtyping>=0.3.3",
 ]
 
 [project.urls]
@@ -109,4 +110,5 @@ dev = [
     "pytest>=8.4.1",
     "torch==2.6",
     "torchmetrics[image]==1.4.0",
+    "typeguard==2.*",
 ]
