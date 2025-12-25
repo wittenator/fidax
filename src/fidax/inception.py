@@ -73,13 +73,15 @@ def download(url: str, ckpt_dir: str | None = "data") -> str:
 
         # first create temp file, in case the download fails
         ckpt_file_temp = os.path.join(ckpt_dir, name + ".temp")
+        cur_data_len = 0
         with open(ckpt_file_temp, "wb") as file:
             for data in response.iter_content(chunk_size=1024):
                 progress_bar.update(len(data))
                 file.write(data)
+                cur_data_len += len(data)
         progress_bar.close()
 
-        if total_size_in_bytes != 0 and progress_bar.n != total_size_in_bytes:
+        if total_size_in_bytes != 0 and cur_data_len != total_size_in_bytes:
             print("An error occured while downloading, please try again.")
             if os.path.exists(ckpt_file_temp):
                 os.remove(ckpt_file_temp)
