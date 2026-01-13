@@ -13,6 +13,7 @@ dependencies = [
     "jaxlib>=0.5.3",
     "requests>=2.32.4",
     "jaxtyping>=0.3.3",
+    "transformers==4.57.3",
 ]
 
 [project.urls]

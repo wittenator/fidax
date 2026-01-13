@@ -38,23 +38,32 @@ from jax.nn import initializers
 from jaxtyping import Array, Float, Int, PRNGKeyArray
 from tqdm import tqdm
 
-#######################################
-######## FID Utilities.
-#######################################
+# Inception V3 Model.
+# https://github.com/matthias-wright/jax-fid/blob/main/jax_fid/inception.py
 
 
-def get_fid_network(dtype: str = "float32", ckpt_dir: str | None = "data") -> nnx.Module:
-    # Returns a function with input of images in range [-1, 1], and output of 2048-length activations.
-    model = InceptionV3(pretrained=True, dtype=dtype, ckpt_dir=ckpt_dir)
-    model = bridge.ToNNX(model, rngs=nnx.Rngs(0))
-    bridge.lazy_init(model, jnp.ones((1, 299, 299, 3)))
-    return model
+class InceptionV3Preprocessor(nnx.Module):
+    def __call__(self, imgs: Float[Array, "batch h w c"], return_tensor: str) -> Float[Array, "batch h w c"]:
+        imgs = (imgs + 1.0) * 0.5  # Scale from [-1, 1] to [0, 1]
+        return {"pixel_values": imgs}
 
 
-#######################################
-######## Inception V3 Model.
-######## https://github.com/matthias-wright/jax-fid/blob/main/jax_fid/inception.py
-#######################################
+class InceptionV3FeatureExtractor(nnx.Module):
+    def __init__(self, dtype: str = "float32", ckpt_dir: str | None = "data"):
+        super().__init__()
+        model = InceptionV3(pretrained=True, dtype=dtype, ckpt_dir=ckpt_dir)
+        self.model = bridge.ToNNX(model, rngs=nnx.Rngs(0))
+        bridge.lazy_init(self.model, jnp.ones((1, 299, 299, 3)))
+
+    def __call__(self, pixel_values: Float[Array, "batch h w c"]) -> Float[Array, "batch 2048"]:
+        if pixel_values.shape[-1] == 1:
+            pixel_values = jnp.tile(pixel_values, (1, 1, 1, 3))
+
+        pixel_values = jax.image.resize(
+            pixel_values, (pixel_values.shape[0], 299, 299, 3), method="bilinear", antialias=True
+        )
+        acts = self.model(pixel_values, train=False)[..., 0, 0, :]
+        return acts
 
 
 def download(url: str, ckpt_dir: str | None = "data") -> str:

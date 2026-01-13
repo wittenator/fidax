@@ -4,10 +4,11 @@ from typing import TYPE_CHECKING, Any, TypedDict
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 from flax import nnx
 from flax.nnx.training.metrics import MetricState
 
-from fidax.inception import get_fid_network
+from fidax.models import get_fid_network
 
 if TYPE_CHECKING:
     from jaxtyping import Array, ArrayLike, Float, Int
@@ -20,17 +21,6 @@ class Stats(TypedDict):
     sigma: Float[Array, "feat feat"]
 
 
-def _extract_activations(model, imgs: Float[Array, "batch h w c"]) -> Float[Array, "batch 2048"]:
-    """Run Inception and return [N, 2048] activations (model's dtype)."""
-    # Handle grayscale images by repeating channels to RGB
-    if imgs.shape[-1] == 1:
-        imgs = jnp.tile(imgs, (1, 1, 1, 3))
-
-    imgs = jax.image.resize(imgs, (imgs.shape[0], 299, 299, 3), method="bilinear")
-    acts = model(imgs, train=False)[..., 0, 0, :]
-    return acts
-
-
 class FrechetInceptionDistance(nnx.Metric):
     """Fréchet Inception Distance (FID) metric implemented in JAX."""
 
@@ -40,6 +30,10 @@ class FrechetInceptionDistance(nnx.Metric):
         model_dtype: str = "float32",
         real_stats: Stats | None = None,
         weights_cache_dir: str | None = "data",
+        model_name: str = "inception_v3",
+        model: nnx.Module | None = None,
+        image_processor: nnx.Module | None = None,
+        feature_dim: int = 2048,
     ) -> None:
         """Initialize FID metric.
 
@@ -48,6 +42,10 @@ class FrechetInceptionDistance(nnx.Metric):
             model_dtype: Data type for the model (default: jnp.float32)
             real_stats: Pre-computed statistics for real images (mu and sigma)
             weights_cache_dir: Directory to cache/download Inception weights
+            model_name: Name of the model to use for FID computation. Use "inception_v3" to use an InceptionV3 backbone or a Flax-compatible DinoV2 model from HF transformers (default: "inception_v3")
+            model: Pre-initialized feature extractor model (overrides model_name if provided)
+            image_processor: Pre-initialized image processor (not used if model is provided)
+            feature_dim: Dimension of the feature activations (default: 2048)
         """
         self.real_stats = real_stats
         self.metric_dtype = metric_dtype
@@ -55,12 +53,20 @@ class FrechetInceptionDistance(nnx.Metric):
         self.weights_cache_dir = weights_cache_dir
 
         # Initialize feature extractor
-        self.model = get_fid_network(dtype=model_dtype, ckpt_dir=self.weights_cache_dir)
+        if model is not None and image_processor is not None:
+            self.model = model
+            self.image_processor = image_processor
+        elif model_name is not None:
+            self.image_preprocessor, self.model = get_fid_network(
+                model_name=model_name, dtype=model_dtype, ckpt_dir=self.weights_cache_dir
+            )
+        else:
+            raise ValueError("Either model and image_processor or model_name must be provided.")
 
         # Dimension of Inception feature activations
-        self._feat_dim = 2048
+        self._feat_dim = feature_dim
 
-        # Streaming accumulators on DEVICE (constant memory wrt number of samples)
+        # Streaming accumulators (constant memory wrt number of samples)
         # Maintain (count, mean[D], M2[D,D]) per split as JAX arrays
         self._real_n = MetricState(jnp.array(0, dtype=jnp.int32))
         self._real_mean = MetricState(jnp.zeros((self._feat_dim,), dtype=self.metric_dtype))
@@ -70,7 +76,7 @@ class FrechetInceptionDistance(nnx.Metric):
         self._fake_mean = MetricState(jnp.zeros((self._feat_dim,), dtype=self.metric_dtype))
         self._fake_M2 = MetricState(jnp.zeros((self._feat_dim, self._feat_dim), dtype=self.metric_dtype))
 
-    @nnx.jit(static_argnames=("real",))
+    # @nnx.jit(static_argnames=("real",))
     def update(self, imgs: Float[ArrayLike, "batch h w c"], real: bool, **kwargs: Any) -> None:  # noqa: ARG002, D417, RUF100
         """Update the metric with new images.
 
@@ -83,9 +89,9 @@ class FrechetInceptionDistance(nnx.Metric):
             This method computes activations on the accelerator and aggregates
             statistics on the host, avoiding large device-resident buffers.
         """
-        imgs = imgs.astype(self.model_dtype) * 2.0 - 1.0  # Scale to [-1, 1]
+        imgs = imgs.astype(self.model_dtype)
         # Run model forward on device and update accumulators on device as well
-        acts = _extract_activations(self.model, imgs).astype(self.metric_dtype)  # [B, D]
+        acts = self.model(**self.image_preprocessor(imgs, return_tensors="np")).astype(self.metric_dtype)
         nb = acts.shape[0]
         mb = jnp.mean(acts, axis=0)
         # Compute batch second moment and convert to centered sum of squares (M2b)
@@ -198,3 +204,70 @@ class FrechetInceptionDistance(nnx.Metric):
     @property
     def fake_count(self) -> int:
         return int(self._fake_n.value)
+
+
+class StandardFrechetInceptionDistance:
+    """Reference FID that stores activations and computes stats at the end."""
+
+    def __init__(
+        self,
+        metric_dtype: jnp.dtype = jnp.float64,
+        model_dtype: str = "float32",
+        real_stats: Stats | None = None,
+        weights_cache_dir: str | None = "data",
+        model_name: str = "inception_v3",
+    ) -> None:
+        self.metric_dtype = metric_dtype
+        self.model_dtype = model_dtype
+        self.real_stats = real_stats
+        self.weights_cache_dir = weights_cache_dir
+
+        self.image_preprocessor, self.model = get_fid_network(
+            model_name=model_name, dtype=model_dtype, ckpt_dir=self.weights_cache_dir
+        )
+        self._real_acts: list[jnp.ndarray] = []
+        self._fake_acts: list[jnp.ndarray] = []
+
+    def _append_acts(self, imgs: Float[ArrayLike, "batch h w c"], real: bool) -> None:
+        imgs = imgs.astype(self.model_dtype)
+        acts = self.model(self.image_preprocessor(imgs)).astype(self.metric_dtype)
+        if real:
+            self._real_acts.append(acts)
+        else:
+            self._fake_acts.append(acts)
+
+    def update(self, imgs: Float[ArrayLike, "batch h w c"], real: bool) -> None:
+        self._append_acts(imgs, real)
+
+    def reset(self) -> None:
+        self._real_acts.clear()
+        self._fake_acts.clear()
+
+    def _stack_stats(self, acts_list: list[jnp.ndarray]) -> tuple[jnp.ndarray, jnp.ndarray]:
+        if not acts_list:
+            return jnp.zeros((2048,), dtype=self.metric_dtype), jnp.zeros((2048, 2048), dtype=self.metric_dtype)
+        acts = jnp.concatenate(acts_list, axis=0)
+        mu = jnp.mean(acts, axis=0)
+        # Sample covariance (ddof=1) to mirror streaming estimator
+        sigma = jnp.cov(acts, rowvar=False, bias=False).astype(self.metric_dtype)
+        return mu, sigma
+
+    def compute(self) -> float:
+        # Fake stats always derived from stored activations
+        mu1, sigma1 = self._stack_stats(self._fake_acts)
+
+        if self.real_stats is not None:
+            mu2 = jnp.asarray(self.real_stats["mu"], dtype=self.metric_dtype)
+            sigma2 = jnp.asarray(self.real_stats["sigma"], dtype=self.metric_dtype)
+        else:
+            mu2, sigma2 = self._stack_stats(self._real_acts)
+
+        return float(FrechetInceptionDistance._fid_from_stats(mu1, sigma1, mu2, sigma2))
+
+    @property
+    def real_count(self) -> int:
+        return int(sum(a.shape[0] for a in self._real_acts))
+
+    @property
+    def fake_count(self) -> int:
+        return int(sum(a.shape[0] for a in self._fake_acts))

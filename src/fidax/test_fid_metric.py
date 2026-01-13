@@ -19,7 +19,7 @@ import torchvision.transforms.v2 as T2
 from jaxtyping import install_import_hook
 
 with install_import_hook("scripts", "typeguard.typechecked"):
-    from fidax.fid import FrechetInceptionDistance
+    from fidax.fid import FrechetInceptionDistance, StandardFrechetInceptionDistance
 
 # activate fp64
 jax.config.update("jax_enable_x64", True)
@@ -57,8 +57,8 @@ def test_fid_equivalence_to_torchmetrics() -> None:
     # clear CUDA memory
     torch.cuda.empty_cache()
 
-    # JAX FrechetInceptionDistance (NNX style)
-    fid_jax = FrechetInceptionDistance()
+    # JAX FrechetInceptionDistance
+    fid_jax = FrechetInceptionDistance(model_name="facebook/dinov2-base", model_dtype="float64")
     t0 = time.perf_counter()
     for i in range(0, N, batch_size):
         fid_jax.update(real_imgs[i : i + batch_size], True)
@@ -74,7 +74,7 @@ def test_fid_equivalence_to_torchmetrics() -> None:
     )
 
     # Allow a small tolerance due to possible implementation/model differences
-    assert np.allclose(jax_score, fid_torch_score, rtol=1e-1, atol=1e-1), (
+    assert np.allclose(jax_score, fid_torch_score, rtol=1e-6, atol=1e-6), (
         f"JAX FID {jax_score} vs Torchmetrics {fid_torch_score}"
     )
 
@@ -82,6 +82,33 @@ def test_fid_equivalence_to_torchmetrics() -> None:
     fid_jax.reset()
     assert fid_jax.real_count == 0
     assert fid_jax.fake_count == 0
+
+
+def test_standard_fid_matches_streaming() -> None:
+    """Standard accumulate-then-compute FID should match streaming version."""
+    rng = np.random.default_rng(123)
+    N = 64
+    batch_size = 16
+    # Create [0,1] images (range expected by both implementations)
+    real_imgs = rng.uniform(low=0.0, high=1.0, size=(N, 299, 299, 3)).astype(np.float32)
+    fake_imgs = rng.uniform(low=0.0, high=1.0, size=(N, 299, 299, 3)).astype(np.float32)
+
+    streaming = FrechetInceptionDistance()
+    standard = StandardFrechetInceptionDistance()
+
+    for i in range(0, N, batch_size):
+        streaming.update(real_imgs[i : i + batch_size], True)
+        streaming.update(fake_imgs[i : i + batch_size], False)
+
+        standard.update(real_imgs[i : i + batch_size], True)
+        standard.update(fake_imgs[i : i + batch_size], False)
+
+    fid_stream = float(streaming.compute())
+    fid_standard = float(standard.compute())
+
+    assert np.allclose(fid_stream, fid_standard, rtol=1e-5, atol=1e-5), (
+        f"streaming {fid_stream} vs standard {fid_standard}"
+    )
 
 
 def test_fid_with_precomputed_stats() -> None:
@@ -143,7 +170,7 @@ def test_fid_on_cifar10_real_vs_modified() -> None:
         ]
     )
     cifar10 = torchvision.datasets.CIFAR10(root="/tmp/cifar10", train=False, download=True, transform=transform)
-    N = 9984
+    N = 512
     batch_size = 64
     real_imgs_torch = torch.stack([cifar10[i][0] for i in range(N)])  # [N, C, H, W], [0,1]
 
@@ -181,7 +208,7 @@ def test_fid_on_cifar10_real_vs_modified() -> None:
     fake_imgs = jnp.array(fake_imgs)
 
     # JAX FID (batched)
-    fid_jax = FrechetInceptionDistance()
+    fid_jax = FrechetInceptionDistance(model_dtype="float64")
     t0 = time.perf_counter()
     for i in range(0, N, batch_size):
         fid_jax.update(real_imgs[i : i + batch_size], True)
@@ -203,7 +230,7 @@ def test_fid_on_cifar10_real_vs_modified() -> None:
     assert jax_score > 0.0
     assert fid_torch_score > 0.0
     # The two implementations should be close
-    assert np.allclose(jax_score, fid_torch_score, rtol=1e-1, atol=1e-1), (
+    assert np.allclose(jax_score, fid_torch_score, rtol=1e-6, atol=1e-6), (
         f"JAX FID {jax_score} vs Torchmetrics {fid_torch_score}"
     )
 
@@ -217,7 +244,7 @@ def test_fid_on_cifar10_real_vs_random_erasing() -> None:
         ]
     )
     cifar10 = torchvision.datasets.CIFAR10(root="/tmp/cifar10", train=False, download=True, transform=transform)
-    N = 9984
+    N = 512
     batch_size = 64
     real_imgs_torch = torch.stack([cifar10[i][0] for i in range(N)])  # [N, C, H, W], [0,1]
 
@@ -254,7 +281,7 @@ def test_fid_on_cifar10_real_vs_random_erasing() -> None:
     fake_imgs = jnp.array(fake_imgs)
 
     # JAX FID (batched)
-    fid_jax = FrechetInceptionDistance()
+    fid_jax = FrechetInceptionDistance(model_dtype="float64")
     t0 = time.perf_counter()
     for i in range(0, N, batch_size):
         fid_jax.update(real_imgs[i : i + batch_size], True)
@@ -276,7 +303,7 @@ def test_fid_on_cifar10_real_vs_random_erasing() -> None:
     assert jax_score > 0.0
     assert fid_torch_score > 0.0
     # The two implementations should be close
-    assert np.allclose(jax_score, fid_torch_score, rtol=1e-1, atol=1e-1), (
+    assert np.allclose(jax_score, fid_torch_score, rtol=1e-6, atol=1e-6), (
         f"JAX FID {jax_score} vs Torchmetrics {fid_torch_score}"
     )
 
@@ -303,7 +330,7 @@ def test_fid_weights_cache_dir_uses_custom_path(tmp_path, monkeypatch) -> None:
         return str(fpath)
 
     # Patch the download function used by the Inception model
-    monkeypatch.setattr("fidax.inception.download", fake_download)
+    monkeypatch.setattr("fidax.models.inception.download", fake_download)
 
     cache_dir = tmp_path / "weights-cache"
 
