@@ -43,8 +43,12 @@ from tqdm import tqdm
 
 
 class InceptionV3Preprocessor(nnx.Module):
-    def __call__(self, imgs: Float[Array, "batch h w c"], return_tensor: str) -> Float[Array, "batch h w c"]:
-        imgs = (imgs + 1.0) * 0.5  # Scale from [-1, 1] to [0, 1]
+    def __call__(self, imgs: Float[Array, "batch h w c"], **kwargs) -> dict[str, Float[Array, "batch h w c"]]:
+        if imgs.shape[-1] == 1:
+            imgs = jnp.tile(imgs, (1, 1, 1, 3))
+
+        imgs = jax.image.resize(imgs, (imgs.shape[0], 299, 299, 3), method="bilinear", antialias=True)
+        imgs = imgs * 2 - 1
         return {"pixel_values": imgs}
 
 
@@ -55,13 +59,8 @@ class InceptionV3FeatureExtractor(nnx.Module):
         self.model = bridge.ToNNX(model, rngs=nnx.Rngs(0))
         bridge.lazy_init(self.model, jnp.ones((1, 299, 299, 3)))
 
+    @jax.jit
     def __call__(self, pixel_values: Float[Array, "batch h w c"]) -> Float[Array, "batch 2048"]:
-        if pixel_values.shape[-1] == 1:
-            pixel_values = jnp.tile(pixel_values, (1, 1, 1, 3))
-
-        pixel_values = jax.image.resize(
-            pixel_values, (pixel_values.shape[0], 299, 299, 3), method="bilinear", antialias=True
-        )
         acts = self.model(pixel_values, train=False)[..., 0, 0, :]
         return acts
 
