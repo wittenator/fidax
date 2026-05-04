@@ -1,45 +1,63 @@
 {
-    "dockerFile": "Dockerfile",
-	"workspaceFolder": "/repo",
-    "workspaceMount": "source=${localWorkspaceFolder},target=/repo,type=bind",
-    "hostRequirements": {
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/devcontainers-extra/features/uv:1": {},
+    "ghcr.io/iterative/features/nvtop:1": {},
+    "ghcr.io/stu-bell/devcontainer-features/claude-code:0": {},
+    "ghcr.io/jsburckhardt/devcontainer-features/codex:1": {}
+  },
+  "hostRequirements": {
        "gpu":true
     },
-    "runArgs": ["--runtime=nvidia", "--gpus=all"],
-    "customizations": {
-        "vscode": {
-            "extensions": [
-                "ms-python.debugpy",
-                "ms-python.python",
-                "ms-python.vscode-pylance",
-                "ms-python.mypy-type-checker",
-                "charliermarsh.ruff",
-                "tamasfe.even-better-toml",
-                "ms-azuretools.vscode-docker",
-                "ms-toolsai.jupyter",
-                "kevinrose.vsc-python-indent",
-                "mosapride.zenkaku",
-                "njpwerner.autodocstring",
-                "redhat.vscode-yaml",
-                "shardulm94.trailing-spaces",
-                "yzhang.markdown-all-in-one"
-            ],
-            "settings": {
-                "[python]": {
-                    "editor.defaultFormatter": "charliermarsh.ruff",
-                    "editor.formatOnSave": true,
-                    "editor.codeActionsOnSave": {
-                        "source.organizeImports": "explicit"
-                    }
-                },
-            "terminal.integrated.defaultProfile.linux": "bash",
-            "terminal.integrated.profiles.linux": { "bash": { "path": "/bin/bash" } }
-            }
+  "containerEnv": {
+    "NVIDIA_VISIBLE_DEVICES": "all",
+    "NVIDIA_DRIVER_CAPABILITIES": "all"
+  },
+  "runArgs": ["--ipc=host", "--runtime=nvidia"],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.debugpy",
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-python.mypy-type-checker",
+        "charliermarsh.ruff",
+        "tamasfe.even-better-toml",
+        "ms-azuretools.vscode-docker",
+        "ms-toolsai.jupyter",
+        "kevinrose.vsc-python-indent",
+        "mosapride.zenkaku",
+        "njpwerner.autodocstring",
+        "redhat.vscode-yaml",
+        "shardulm94.trailing-spaces",
+        "yzhang.markdown-all-in-one"
+      ],
+      "settings": {
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff",
+          "editor.formatOnSave": true,
+          "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit",
+            "source.fixAll.ruff": "explicit"
+          }
+        },
+        "ruff.nativeServer": true,
+        "ruff.configurationPreference": "filesystemFirst",
+        "mypy-type-checker.args": ["--config-file=pyproject.toml"]
         }
-    },
-    "postCreateCommand": "uv sync --frozen",
-    "postStartCommand": "uv run pre-commit install",
-    "remoteEnv": {
-        "PYTHONPATH": "${containerEnv:PYTHONPATH}:/repo"
     }
+  },
+  "remoteEnv": {
+    "UV_PYTHON": "3.12",
+    "UV_LINK_MODE": "copy",
+    "PATH": "$UV_PROJECT_ENVIRONMENT/bin:${containerEnv:PATH}",
+    "CACHE_DIR": "/home/vscode/.cache",
+    "PYTHONPATH": "${containerEnv:PYTHONPATH}:/repo"
+  },
+  "postCreateCommand": "uv sync --frozen",
+  "postStartCommand": "uv run pre-commit install",
+  "mounts": [
+    "source=${localEnv:HOME}/.claude,target=/home/vscode/.claude,type=bind,consistency=cached",
+    "source=${localEnv:HOME}/.codex,target=/home/vscode/.codex,type=bind,consistency=cached"
+  ]
 }

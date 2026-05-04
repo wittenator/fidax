@@ -26,7 +26,7 @@ def hf_processor():
         do_center_crop=True,
         crop_size={"height": 224, "width": 224},
         do_rescale=True,
-        rescale_factor=1 / 255.0,
+        rescale_factor=1,
         do_normalize=True,
         image_mean=[0.485, 0.456, 0.406],
         image_std=[0.229, 0.224, 0.225],
@@ -50,7 +50,7 @@ def flax_processor():
 
 def create_solid_image(h: int, w: int, color: tuple[int, int, int]) -> np.ndarray:
     """Create solid color image."""
-    img = np.zeros((h, w, 3), dtype=np.uint8)
+    img = np.zeros((h, w, 3))
     img[..., 0] = color[0]
     img[..., 1] = color[1]
     img[..., 2] = color[2]
@@ -59,34 +59,34 @@ def create_solid_image(h: int, w: int, color: tuple[int, int, int]) -> np.ndarra
 
 def create_gradient_image(h: int, w: int) -> np.ndarray:
     """Create horizontal gradient image."""
-    img = np.zeros((h, w, 3), dtype=np.uint8)
+    img = np.zeros((h, w, 3))
     for c in range(3):
-        gradient = np.linspace(0, 255, w, dtype=np.uint8)
+        gradient = np.linspace(0, 1, w)
         img[..., c] = np.tile(gradient, (h, 1))
     return img
 
 
 def create_checkerboard(h: int, w: int, block_size: int = 32) -> np.ndarray:
     """Create checkerboard pattern."""
-    img = np.zeros((h, w, 3), dtype=np.uint8)
+    img = np.zeros((h, w, 3))
     for i in range(h):
         for j in range(w):
             if ((i // block_size) + (j // block_size)) % 2 == 0:
-                img[i, j] = [255, 255, 255]
+                img[i, j] = [1, 1, 1]
     return img
 
 
 def create_random_image(h: int, w: int, seed: int = 42) -> np.ndarray:
     """Create random noise image."""
     rng = np.random.default_rng(seed)
-    return rng.integers(0, 256, size=(h, w, 3), dtype=np.uint8)
+    return rng.integers(0, 256, size=(h, w, 3))
 
 
 def process_with_hf(processor, image: np.ndarray) -> np.ndarray:
     """Process image with HuggingFace processor."""
     from PIL import Image
 
-    pil_image = Image.fromarray(image)
+    pil_image = Image.fromarray((image*255).astype(np.uint8))
     outputs = processor(pil_image, return_tensors="np")
     return outputs["pixel_values"][0]  # (3, 224, 224)
 
@@ -109,11 +109,11 @@ class TestSolidColors:
         "color,name",
         [
             ((0, 0, 0), "black"),
-            ((255, 255, 255), "white"),
-            ((255, 0, 0), "red"),
-            ((0, 255, 0), "green"),
-            ((0, 0, 255), "blue"),
-            ((128, 128, 128), "gray"),
+            ((1, 1, 1), "white"),
+            ((1, 0, 0), "red"),
+            ((0, 1, 0), "green"),
+            ((1), "blue"),
+            ((0.5, 0.5, 0.5), "gray"),
         ],
     )
     @pytest.mark.parametrize("size", [(256, 256), (400, 300), (300, 400)])
@@ -354,7 +354,7 @@ class TestNumericalStability:
 
     def test_all_zeros(self, hf_processor, flax_processor):
         """All zero image should normalize correctly."""
-        image = np.zeros((256, 256, 3), dtype=np.uint8)
+        image = np.zeros((256, 256, 3))
 
         hf_out = process_with_hf(hf_processor, image)
         flax_out = process_with_flax(flax_processor, image)
@@ -367,7 +367,7 @@ class TestNumericalStability:
 
     def test_all_max(self, hf_processor, flax_processor):
         """All 255 image should normalize correctly."""
-        image = np.full((256, 256, 3), 255, dtype=np.uint8)
+        image = np.full((256, 256, 3), 1)
 
         hf_out = process_with_hf(hf_processor, image)
         flax_out = process_with_flax(flax_processor, image)
