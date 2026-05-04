@@ -39,7 +39,7 @@ def preprocess(
     Preprocess a single image (jittable).
 
     Args:
-        image: (H, W, 3) array, values in [0, 255].
+        image: (H, W, 3) array, values in [0, 1].
         resize_height: Height after resize (precomputed from input size).
         resize_width: Width after resize (precomputed from input size).
         crop_size: Final square crop size.
@@ -58,9 +58,6 @@ def preprocess(
     top = (resize_height - crop_size) // 2
     left = (resize_width - crop_size) // 2
     image = lax.dynamic_slice(image, (top, left, 0), (crop_size, crop_size, 3))
-
-    # Rescale [0, 255] -> [0, 1]
-    image = image / 255.0
 
     # Normalize
     mean = jnp.array(mean, dtype=jnp.float32)
@@ -133,7 +130,7 @@ class FlaxImageProcessor:
         Preprocess images.
 
         Args:
-            images: (H, W, 3) or (B, H, W, 3) array, values in [0, 255].
+            images: (H, W, 3) or (B, H, W, 3) array, values in [0, 1].
 
         Returns:
             {"pixel_values": (B, 3, crop_size, crop_size) array}
