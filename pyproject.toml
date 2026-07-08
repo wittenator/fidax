@@ -12,8 +12,8 @@ dependencies = [
     "jaxtyping>=0.3.3",
     "transformers==4.57.3",
     "flax>=0.12.0",
-    "jax>=0.5.3",
-    "jaxlib>=0.5.3",
+    "jax>=0.10.0",
+    "jaxlib>=0.10.0",
 ]
 
 [project.urls]
@@ -117,5 +117,4 @@ dev = [
     "torch==2.8",
     "torchmetrics[image]>=1.8.2",
     "typeguard==2.*",
-    "torch"
 ]

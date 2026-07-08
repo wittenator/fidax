@@ -48,7 +48,9 @@ class InceptionV3Preprocessor(nnx.Module):
             imgs = jnp.tile(imgs, (1, 1, 1, 3))
 
         imgs = jax.image.resize(imgs, (imgs.shape[0], 299, 299, 3), method="bilinear", antialias=True)
-        imgs = imgs * 2 - 1
+        # Map [0, 1] -> [-1, 1) exactly like the original TF FID graph, which computes
+        # (x_uint8 - 128) * 0.0078125; torch-fidelity/torchmetrics replicate the same.
+        imgs = (imgs * 255 - 128) / 128
         return {"pixel_values": imgs}
 
 
@@ -144,7 +146,7 @@ class InceptionV3(nn.Module):
         self,
         x: Float[Array, "batch h w c"],
         train: bool = True,
-        rng: PRNGKeyArray = None,
+        rng: PRNGKeyArray | None = None,
     ) -> Array | tuple[Array, Array]:
         """
         Args:
@@ -603,7 +605,7 @@ class BatchNorm(nn.Module):
     @nn.compact
     def __call__(self, x: jnp.ndarray, use_running_average: bool | None = None) -> jnp.ndarray:
         use_running_average = merge_param("use_running_average", self.use_running_average, use_running_average)
-        x = jnp.asarray(x, jnp.float32)
+        x = jnp.asarray(x, self.dtype)
         axis = self.axis if isinstance(self.axis, tuple) else (self.axis,)
         axis = _absolute_dims(x.ndim, axis)
         feature_shape = tuple(d if i in axis else 1 for i, d in enumerate(x.shape))
@@ -688,14 +690,9 @@ def avg_pool(
     assert len(window_shape) == 2
 
     y = pool(inputs, 0.0, jax.lax.add, window_shape, strides, padding)
+    # Divide by the number of valid (non-padding) elements per window (count_include_pad=False),
+    # matching the torchvision Inception implementation the FID weights were trained with.
     ones = jnp.ones(shape=(1, inputs.shape[1], inputs.shape[2], 1)).astype(inputs.dtype)
-    counts = jax.lax.conv_general_dilated(
-        ones,
-        jnp.expand_dims(jnp.ones(window_shape).astype(inputs.dtype), axis=(-2, -1)),
-        window_strides=(1, 1),
-        padding=((1, 1), (1, 1)),
-        dimension_numbers=nn.linear._conv_dimension_numbers(ones.shape),
-        feature_group_count=1,
-    )
+    counts = pool(ones, 0.0, jax.lax.add, window_shape, strides, padding)
     y = y / counts
     return y

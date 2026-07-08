@@ -4,7 +4,7 @@ import jax
 import numpy as np
 from jaxtyping import install_import_hook
 
-with install_import_hook("scripts", "typeguard.typechecked"):
+with install_import_hook("fidax", "typeguard.typechecked"):
     from fidax.fid import CachedRealFrechetInceptionDistance
     from fidax.mifid import MemorizationInformedFrechetInceptionDistance
 
@@ -33,7 +33,7 @@ def test_mifid_matches_fid_when_penalty_one() -> None:
     mifid_score = float(mifid.compute())
     fid_score = float(fid.compute())
 
-    assert np.allclose(mifid_score, fid_score, rtol=1e-5, atol=1e-5), f"MiFID {mifid_score} vs FID {fid_score}"
+    assert np.allclose(mifid_score, fid_score, rtol=1e-8, atol=1e-8), f"MiFID {mifid_score} vs FID {fid_score}"
 
 
 def test_mifid_penalty_thresholded_for_identical_sets() -> None:

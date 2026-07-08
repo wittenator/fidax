@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import jax.numpy as jnp
+from flax import nnx
 from flax.nnx.training.metrics import MetricState
+from jaxtyping import Array, ArrayLike, Float
 
 from fidax.fid import CachedRealFrechetInceptionDistance
-
-if TYPE_CHECKING:
-    from jaxtyping import Array, ArrayLike, Float
 
 
 class MemorizationInformedFrechetInceptionDistance(CachedRealFrechetInceptionDistance):
@@ -21,6 +18,8 @@ class MemorizationInformedFrechetInceptionDistance(CachedRealFrechetInceptionDis
         real_stats: dict[str, jnp.ndarray] | None = None,
         weights_cache_dir: str | None = "data",
         model_name: str = "inception_v3",
+        model: nnx.Module | None = None,
+        image_processor: nnx.Module | None = None,
         feature_dim: int = 2048,
         cosine_distance_eps: float = 0.1,
     ) -> None:
@@ -30,6 +29,8 @@ class MemorizationInformedFrechetInceptionDistance(CachedRealFrechetInceptionDis
             real_stats=real_stats,
             weights_cache_dir=weights_cache_dir,
             model_name=model_name,
+            model=model,
+            image_processor=image_processor,
             feature_dim=feature_dim,
         )
         self.cosine_distance_eps = cosine_distance_eps
@@ -58,6 +59,13 @@ class MemorizationInformedFrechetInceptionDistance(CachedRealFrechetInceptionDis
     def update(self, imgs: Float[ArrayLike, "batch h w c"], real: bool) -> None:
         acts = self._extract_activations(imgs)
         if real:
+            # The penalty of already-processed fake batches was computed against an incomplete
+            # real set and cannot be repaired, so adding more reals now would silently corrupt it.
+            if int(self._penalty_count[...]) > 0:
+                raise ValueError(
+                    "All real batches must be added before the first fake batch for MiFID; "
+                    "call reset() and re-add all images in that order."
+                )
             self._real_acts.append(acts)
         else:
             self._update_fake_stats_from_acts(acts)
@@ -91,7 +99,7 @@ class MemorizationInformedFrechetInceptionDistance(CachedRealFrechetInceptionDis
     def get_penalty(self) -> Array:
         count = int(self._penalty_count[...])
         if count == 0:
-            return 1.0
+            return jnp.array(1.0, dtype=self.metric_dtype)
         mean_distance = self._penalty_sum[...] / jnp.array(count, dtype=self.metric_dtype)
         distance = jnp.where(
             mean_distance < jnp.array(self.cosine_distance_eps, dtype=mean_distance.dtype),

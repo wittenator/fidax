@@ -7,7 +7,7 @@ A JAX implementation of the Fréchet Inception Distance (FID) metric for evaluat
 - **Pure JAX Implementation**: Leverages JAX's JIT compilation for fast computation
 - **Pre-computed Statistics**: Supports using pre-computed real image statistics for faster evaluation
 - **GPU Accelerated**: Optimized for CUDA-enabled GPUs
-- **Torchmetrics Compatible**: Results match torchmetrics implementation up to 1e-1 absolute tolerance with FP32 execution of the InceptionV3 model and FP64 for the metric computation on CIFAR10 tests
+- **Torchmetrics Compatible**: InceptionV3 features match the torchmetrics/torch-fidelity implementation to ~1e-6; FID scores agree to ~1e-3 in small sample tests.
 
 ## Installation
 
@@ -28,20 +28,19 @@ uv add fidax
 ## Quick Start
 
 ```python
-import jax 
-jax.config.update("jax_enable_x64", True)
-import jax.numpy as jnp
-from fidax.fid import FrechetInceptionDistance
+import jax
+jax.config.update("jax_enable_x64", True)  # required for float64 metric accumulators
+from fidax import FrechetInceptionDistance
 
 # Initialize FID metric
 fid = FrechetInceptionDistance()
 
-# Update with real images (shape: [N, 299, 299, 3], range: [-1, 1])
-real_images = jnp.random.uniform(-1, 1, (100, 299, 299, 3))
+# Update with real images (shape: [N, H, W, 3], range: [0, 1])
+real_images = jax.random.uniform(jax.random.key(0), (100, 299, 299, 3))
 fid.update(real_images, real=True)
 
 # Update with generated/fake images
-fake_images = jnp.random.uniform(-1, 1, (100, 299, 299, 3))
+fake_images = jax.random.uniform(jax.random.key(1), (100, 299, 299, 3))
 fid.update(fake_images, real=False)
 
 # Compute FID score

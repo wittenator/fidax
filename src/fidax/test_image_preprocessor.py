@@ -26,7 +26,7 @@ def hf_processor():
         do_center_crop=True,
         crop_size={"height": 224, "width": 224},
         do_rescale=True,
-        rescale_factor=1,
+        rescale_factor=1 / 255,
         do_normalize=True,
         image_mean=[0.485, 0.456, 0.406],
         image_std=[0.229, 0.224, 0.225],
@@ -77,16 +77,21 @@ def create_checkerboard(h: int, w: int, block_size: int = 32) -> np.ndarray:
 
 
 def create_random_image(h: int, w: int, seed: int = 42) -> np.ndarray:
-    """Create random noise image."""
+    """Create random noise image in [0, 1] (quantized to uint8 precision)."""
     rng = np.random.default_rng(seed)
-    return rng.integers(0, 256, size=(h, w, 3))
+    return rng.integers(0, 256, size=(h, w, 3)) / 255.0
+
+
+def quantize(image: np.ndarray) -> np.ndarray:
+    """Quantize a [0, 1] image to the uint8 grid so both pipelines see identical pixel data."""
+    return np.round(image * 255) / 255
 
 
 def process_with_hf(processor, image: np.ndarray) -> np.ndarray:
     """Process image with HuggingFace processor."""
     from PIL import Image
 
-    pil_image = Image.fromarray((image*255).astype(np.uint8))
+    pil_image = Image.fromarray(np.round(image * 255).astype(np.uint8))
     outputs = processor(pil_image, return_tensors="np")
     return outputs["pixel_values"][0]  # (3, 224, 224)
 
@@ -95,7 +100,7 @@ def process_with_flax(processor: FlaxImageProcessor, image: np.ndarray) -> np.nd
     """Process image with Flax processor."""
     h, w = image.shape[:2]
     processor.set_input_size(h, w)
-    outputs = processor(jnp.array(image, dtype=jnp.float32))
+    outputs = processor(jnp.array(quantize(image), dtype=jnp.float32))
     return np.array(outputs["pixel_values"][0])  # (3, 224, 224)
 
 
@@ -112,7 +117,7 @@ class TestSolidColors:
             ((1, 1, 1), "white"),
             ((1, 0, 0), "red"),
             ((0, 1, 0), "green"),
-            ((1), "blue"),
+            ((0, 0, 1), "blue"),
             ((0.5, 0.5, 0.5), "gray"),
         ],
     )

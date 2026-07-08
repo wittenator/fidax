@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, TypedDict
+import warnings
+from typing import Any, TypedDict
 
 import jax
 import jax.numpy as jnp
 from flax import nnx
 from flax.nnx.training.metrics import MetricState
+from jaxtyping import Array, ArrayLike, Float, Int
 
 from fidax.models import get_fid_network
-
-if TYPE_CHECKING:
-    from jaxtyping import Array, ArrayLike, Float, Int
 
 
 class Stats(TypedDict):
@@ -36,6 +35,14 @@ class _FIDBase:
         self.metric_dtype = metric_dtype
         self.model_dtype = model_dtype
         self.weights_cache_dir = weights_cache_dir
+
+        if jnp.dtype(metric_dtype) == jnp.float64 and not jax.config.jax_enable_x64:
+            warnings.warn(
+                "metric_dtype is float64 but jax_enable_x64 is disabled, so all metric computations will "
+                "silently run in float32. Call jax.config.update('jax_enable_x64', True) before creating "
+                "the metric for accurate FID values.",
+                stacklevel=3,
+            )
 
         # Initialize feature extractor
         if model is not None and image_processor is not None:
@@ -75,6 +82,35 @@ class _FIDBase:
         eigvals = jnp.linalg.eigvals(sigma1 @ sigma2)
         covmean = jnp.sum(jnp.sqrt(jnp.abs(eigvals)).real)
         return diff + traces - 2 * covmean
+
+    def _merge_stats(
+        self,
+        n: Int[Array, ""],
+        mean: Float[Array, "feat"],
+        M2: Float[Array, "feat feat"],
+        acts: Float[Array, "batch feat"],
+    ) -> tuple[Int[Array, ""], Float[Array, "feat"], Float[Array, "feat feat"]]:
+        """Merge a batch of activations into (count, mean, M2) accumulators using Chan's formula."""
+        nb = acts.shape[0]
+        mb = jnp.mean(acts, axis=0)
+        # Compute batch second moment and convert to centered sum of squares (M2b)
+        S2b = acts.T @ acts  # (D,D)
+        nb_f = jnp.array(nb, dtype=self.metric_dtype)
+        M2b = S2b - nb_f * jnp.outer(mb, mb)  # (D,D)
+
+        # Combine using Chan's formula (works also when n == 0)
+        n_f = n.astype(self.metric_dtype)
+        n_new = n + jnp.array(nb, dtype=n.dtype)
+        n_new_f = n_f + nb_f
+        mean_new = jnp.where(n_new_f > 0, (mean * n_f + mb * nb_f) / n_new_f, jnp.zeros_like(mean))
+        delta = mb - mean
+        M2_new = (
+            M2
+            + M2b
+            + jnp.outer(delta, delta)
+            * jnp.where(n_new_f > 0, (n_f * nb_f) / n_new_f, jnp.array(0, dtype=self.metric_dtype))
+        )
+        return n_new, mean_new, M2_new
 
     def _stats_from_accumulators(
         self,
@@ -159,36 +195,17 @@ class FrechetInceptionDistance(nnx.Metric, _FIDBase):
             kwargs: Additional keyword arguments (unused)
 
         Note:
-            This method computes activations on the accelerator and aggregates
-            statistics on the host, avoiding large device-resident buffers.
+            Model forward pass and statistics aggregation both run on device;
+            only constant-size accumulators are kept, never the activations.
         """
-        # Run model forward on device and update accumulators on device as well
         acts = self._extract_activations(imgs)
-        nb = acts.shape[0]
-        mb = jnp.mean(acts, axis=0)
-        # Compute batch second moment and convert to centered sum of squares (M2b)
-        S2b = acts.T @ acts  # (D,D)
-        nb_f = jnp.array(nb, dtype=self.metric_dtype)
-        M2b = S2b - nb_f * jnp.outer(mb, mb)  # (D,D)
 
         # Select current split accumulators
         n = self._real_n[...] if real else self._fake_n[...]
         mean = self._real_mean[...] if real else self._fake_mean[...]
         M2 = self._real_M2[...] if real else self._fake_M2[...]
 
-        # Combine using Chan's formula (works also when n == 0)
-        n_f = n.astype(self.metric_dtype)
-        nb_f = jnp.array(nb, dtype=self.metric_dtype)
-        n_new = n + jnp.array(nb, dtype=n.dtype)
-        n_new_f = n_f + nb_f
-        mean_new = jnp.where(n_new_f > 0, (mean * n_f + mb * nb_f) / n_new_f, jnp.zeros_like(mean))
-        delta = mb - mean
-        M2_new = (
-            M2
-            + M2b
-            + jnp.outer(delta, delta)
-            * jnp.where(n_new_f > 0, (n_f * nb_f) / n_new_f, jnp.array(0, dtype=self.metric_dtype))
-        )
+        n_new, mean_new, M2_new = self._merge_stats(n, mean, M2, acts)
 
         if real:
             self._real_n[...] = n_new
@@ -200,7 +217,7 @@ class FrechetInceptionDistance(nnx.Metric, _FIDBase):
             self._fake_M2[...] = M2_new
 
     @nnx.jit
-    def compute(self) -> float:
+    def compute(self) -> Float[Array, ""]:
         """Compute the FID score between real and fake image distributions."""
         # Derive stats for fake (device)
         mu1, sigma1 = self._stats_from_accumulators(self._fake_n[...], self._fake_mean[...], self._fake_M2[...])
@@ -249,6 +266,9 @@ class StandardFrechetInceptionDistance(nnx.Metric, _FIDBase):
         real_stats: Stats | None = None,
         weights_cache_dir: str | None = "data",
         model_name: str = "inception_v3",
+        model: nnx.Module | None = None,
+        image_processor: nnx.Module | None = None,
+        feature_dim: int = 2048,
     ) -> None:
         _FIDBase.__init__(
             self,
@@ -257,6 +277,9 @@ class StandardFrechetInceptionDistance(nnx.Metric, _FIDBase):
             real_stats=real_stats,
             weights_cache_dir=weights_cache_dir,
             model_name=model_name,
+            model=model,
+            image_processor=image_processor,
+            feature_dim=feature_dim,
         )
         self._real_acts: list[jnp.ndarray] = []
         self._fake_acts: list[jnp.ndarray] = []
@@ -306,6 +329,8 @@ class CachedRealFrechetInceptionDistance(nnx.Metric, _FIDBase):
         real_stats: Stats | None = None,
         weights_cache_dir: str | None = "data",
         model_name: str = "inception_v3",
+        model: nnx.Module | None = None,
+        image_processor: nnx.Module | None = None,
         feature_dim: int = 2048,
     ) -> None:
         _FIDBase.__init__(
@@ -315,6 +340,8 @@ class CachedRealFrechetInceptionDistance(nnx.Metric, _FIDBase):
             real_stats=real_stats,
             weights_cache_dir=weights_cache_dir,
             model_name=model_name,
+            model=model,
+            image_processor=image_processor,
             feature_dim=feature_dim,
         )
         self._real_acts: list[jnp.ndarray] = []
@@ -332,27 +359,7 @@ class CachedRealFrechetInceptionDistance(nnx.Metric, _FIDBase):
         self._update_fake_stats_from_acts(acts)
 
     def _update_fake_stats_from_acts(self, acts: jnp.ndarray) -> None:
-        nb = acts.shape[0]
-        mb = jnp.mean(acts, axis=0)
-        S2b = acts.T @ acts
-        nb_f = jnp.array(nb, dtype=self.metric_dtype)
-        M2b = S2b - nb_f * jnp.outer(mb, mb)
-
-        n = self._fake_n[...]
-        mean = self._fake_mean[...]
-        M2 = self._fake_M2[...]
-        n_f = n.astype(self.metric_dtype)
-        n_new = n + jnp.array(nb, dtype=n.dtype)
-        n_new_f = n_f + nb_f
-        mean_new = jnp.where(n_new_f > 0, (mean * n_f + mb * nb_f) / n_new_f, jnp.zeros_like(mean))
-        delta = mb - mean
-        M2_new = (
-            M2
-            + M2b
-            + jnp.outer(delta, delta)
-            * jnp.where(n_new_f > 0, (n_f * nb_f) / n_new_f, jnp.array(0, dtype=self.metric_dtype))
-        )
-
+        n_new, mean_new, M2_new = self._merge_stats(self._fake_n[...], self._fake_mean[...], self._fake_M2[...], acts)
         self._fake_n[...] = n_new
         self._fake_mean[...] = mean_new
         self._fake_M2[...] = M2_new

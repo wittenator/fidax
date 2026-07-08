@@ -49,7 +49,9 @@ def preprocess(
     Returns:
         (3, crop_size, crop_size) normalized array.
     """
-    image = image.astype(jnp.float32)
+    # Compute in the incoming dtype (at least float32) so a float64 model dtype is preserved
+    dtype = jnp.promote_types(image.dtype, jnp.float32)
+    image = image.astype(dtype)
 
     # Resize (bicubic)
     image = jax.image.resize(image, (resize_height, resize_width, 3), method="bicubic")
@@ -60,8 +62,8 @@ def preprocess(
     image = lax.dynamic_slice(image, (top, left, 0), (crop_size, crop_size, 3))
 
     # Normalize
-    mean = jnp.array(mean, dtype=jnp.float32)
-    std = jnp.array(std, dtype=jnp.float32)
+    mean = jnp.array(mean, dtype=dtype)
+    std = jnp.array(std, dtype=dtype)
     image = (image - mean) / std
 
     # HWC -> CHW
@@ -89,10 +91,8 @@ class FlaxImageProcessor:
     _batch_fn: callable = field(default=None, repr=False)
 
     def __post_init__(self):
-        if isinstance(self.mean, list):
-            object.__setattr__(self, "mean", tuple(self.mean))
-        if isinstance(self.std, list):
-            object.__setattr__(self, "std", tuple(self.std))
+        self.mean = tuple(self.mean)
+        self.std = tuple(self.std)
 
     def set_input_size(self, height: int, width: int) -> "FlaxImageProcessor":
         """
@@ -108,8 +108,8 @@ class FlaxImageProcessor:
             self (for chaining).
         """
         new_h, new_w = compute_resize_dims(height, width, self.shortest_edge)
-        object.__setattr__(self, "_resize_height", new_h)
-        object.__setattr__(self, "_resize_width", new_w)
+        self._resize_height = new_h
+        self._resize_width = new_w
 
         # Create jitted preprocessing functions
         fn = partial(
@@ -120,8 +120,8 @@ class FlaxImageProcessor:
             mean=self.mean,
             std=self.std,
         )
-        object.__setattr__(self, "_preprocess_fn", jax.jit(fn))
-        object.__setattr__(self, "_batch_fn", jax.jit(jax.vmap(fn)))
+        self._preprocess_fn = jax.jit(fn)
+        self._batch_fn = jax.jit(jax.vmap(fn))
 
         return self
 

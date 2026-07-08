@@ -1,0 +1,24 @@
+{
+  "features": {
+    "ghcr.io/devcontainers-extra/features/uv:1": {
+      "version": "1.0.2",
+      "resolved": "ghcr.io/devcontainers-extra/features/uv@sha256:1ac5b9f17a9e9e745933d0ac2ecf758e06ed3da4423cd22c94cce4d482fd2dd8",
+      "integrity": "sha256:1ac5b9f17a9e9e745933d0ac2ecf758e06ed3da4423cd22c94cce4d482fd2dd8"
+    },
+    "ghcr.io/iterative/features/nvtop:1": {
+      "version": "1.0.0",
+      "resolved": "ghcr.io/iterative/features/nvtop@sha256:62c05b2810ffecdc42125f225e9c6e2b2c19850c58cea3418cef5cfe5c41025d",
+      "integrity": "sha256:62c05b2810ffecdc42125f225e9c6e2b2c19850c58cea3418cef5cfe5c41025d"
+    },
+    "ghcr.io/jsburckhardt/devcontainer-features/codex:1": {
+      "version": "1.0.0",
+      "resolved": "ghcr.io/jsburckhardt/devcontainer-features/codex@sha256:e6ec5fabc4c804ddda9e0aee677d13e989decc7fbbdcf27f70551f986bb9b28a",
+      "integrity": "sha256:e6ec5fabc4c804ddda9e0aee677d13e989decc7fbbdcf27f70551f986bb9b28a"
+    },
+    "ghcr.io/stu-bell/devcontainer-features/claude-code:0": {
+      "version": "0.1.0",
+      "resolved": "ghcr.io/stu-bell/devcontainer-features/claude-code@sha256:f87b4da3f8648db9111cb25c6bd3817d096018d81f3fb596340f7ffdba14409a",
+      "integrity": "sha256:f87b4da3f8648db9111cb25c6bd3817d096018d81f3fb596340f7ffdba14409a"
+    }
+  }
+}
