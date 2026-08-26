@@ -1,6 +1,6 @@
 [project]
 name = "fidax"
-version = "0.3.1"
+version = "0.4.0"
 description = "An sklearn-style FID metric class for Jax"
 readme = "README.md"
 authors = [
@@ -116,5 +116,8 @@ dev = [
     "pytest>=8.4.1",
     "torch==2.8",
     "torchmetrics[image]>=1.8.2",
+    "matplotlib>=3.8",
+    "torchvision",
     "typeguard==2.*",
+    "vendi-score>=0.0.3",
 ]

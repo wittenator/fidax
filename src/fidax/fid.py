@@ -15,7 +15,7 @@ from fidax.models import get_fid_network
 class Stats(TypedDict):
     """Typed container for real/fake distribution statistics used by FID."""
 
-    mu: Float[Array, "feat"]
+    mu: Float[Array, feat]
     sigma: Float[Array, "feat feat"]
 
 
@@ -65,9 +65,9 @@ class _FIDBase:
     @staticmethod
     @jax.jit
     def _fid_from_stats(
-        mu1: Float[Array, "feat"],
+        mu1: Float[Array, feat],
         sigma1: Float[Array, "feat feat"],
-        mu2: Float[Array, "feat"],
+        mu2: Float[Array, feat],
         sigma2: Float[Array, "feat feat"],
     ) -> Float[Array, ""]:
         """Compute FID score from distribution statistics.
@@ -86,10 +86,10 @@ class _FIDBase:
     def _merge_stats(
         self,
         n: Int[Array, ""],
-        mean: Float[Array, "feat"],
+        mean: Float[Array, feat],
         M2: Float[Array, "feat feat"],
         acts: Float[Array, "batch feat"],
-    ) -> tuple[Int[Array, ""], Float[Array, "feat"], Float[Array, "feat feat"]]:
+    ) -> tuple[Int[Array, ""], Float[Array, feat], Float[Array, "feat feat"]]:
         """Merge a batch of activations into (count, mean, M2) accumulators using Chan's formula."""
         nb = acts.shape[0]
         mb = jnp.mean(acts, axis=0)
@@ -115,9 +115,9 @@ class _FIDBase:
     def _stats_from_accumulators(
         self,
         n: Int[Array, ""],
-        mean: Float[Array, "feat"],
+        mean: Float[Array, feat],
         M2: Float[Array, "feat feat"],
-    ) -> tuple[Float[Array, "feat"], Float[Array, "feat feat"]]:
+    ) -> tuple[Float[Array, feat], Float[Array, "feat feat"]]:
         """Return (mu, sigma) from accumulators on device; ddof=1 if n>1, else zeros."""
         n = jnp.asarray(n)
         n_f = n.astype(self.metric_dtype)
@@ -236,15 +236,23 @@ class FrechetInceptionDistance(nnx.Metric, _FIDBase):
         self._real_n[...] = jnp.array(0, dtype=jnp.int32)
         self._real_mean[...] = jnp.zeros((self._feat_dim,), dtype=self.metric_dtype)
         self._real_M2[...] = jnp.zeros((self._feat_dim, self._feat_dim), dtype=self.metric_dtype)
+        self.reset_fake()
+
+    def reset_fake(self) -> None:
+        """Reset only the fake-side accumulators, keeping the real-side state.
+
+        Use this to evaluate several generated sample sets against one fixed
+        real distribution without re-streaming the real images.
+        """
         self._fake_n[...] = jnp.array(0, dtype=jnp.int32)
         self._fake_mean[...] = jnp.zeros((self._feat_dim,), dtype=self.metric_dtype)
         self._fake_M2[...] = jnp.zeros((self._feat_dim, self._feat_dim), dtype=self.metric_dtype)
 
     # Public helpers for tests and external use
-    def get_real_stats(self) -> tuple[Float[Array, "feat"], Float[Array, "feat feat"]]:
+    def get_real_stats(self) -> tuple[Float[Array, feat], Float[Array, "feat feat"]]:
         return self._stats_from_accumulators(self._real_n[...], self._real_mean[...], self._real_M2[...])
 
-    def get_fake_stats(self) -> tuple[Float[Array, "feat"], Float[Array, "feat feat"]]:
+    def get_fake_stats(self) -> tuple[Float[Array, feat], Float[Array, "feat feat"]]:
         return self._stats_from_accumulators(self._fake_n[...], self._fake_mean[...], self._fake_M2[...])
 
     @property
@@ -296,6 +304,10 @@ class StandardFrechetInceptionDistance(nnx.Metric, _FIDBase):
 
     def reset(self) -> None:
         self._real_acts.clear()
+        self.reset_fake()
+
+    def reset_fake(self) -> None:
+        """Reset only the fake-side activations, keeping the real-side state."""
         self._fake_acts.clear()
 
     def compute(self) -> float:
@@ -372,6 +384,10 @@ class CachedRealFrechetInceptionDistance(nnx.Metric, _FIDBase):
 
     def reset(self) -> None:
         self._real_acts.clear()
+        self.reset_fake()
+
+    def reset_fake(self) -> None:
+        """Reset only the fake-side accumulators, keeping the cached real activations."""
         self._fake_n[...] = jnp.array(0, dtype=jnp.int32)
         self._fake_mean[...] = jnp.zeros((self._feat_dim,), dtype=self.metric_dtype)
         self._fake_M2[...] = jnp.zeros((self._feat_dim, self._feat_dim), dtype=self.metric_dtype)
