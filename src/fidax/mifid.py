@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import jax
 import jax.numpy as jnp
 from flax import nnx
 from flax.nnx.training.metrics import MetricState
@@ -36,23 +37,45 @@ class MemorizationInformedFrechetInceptionDistance(CachedRealFrechetInceptionDis
         self.cosine_distance_eps = cosine_distance_eps
         self._penalty_sum = MetricState(jnp.array(0.0, dtype=self.metric_dtype))
         self._penalty_count = MetricState(jnp.array(0, dtype=jnp.int32))
+        # nnx.data marks the attribute as a data leaf so a device array can
+        # be assigned later (a bare None would make it static).
+        self._real_norm_cache = nnx.data(None)
 
     @staticmethod
     def _normalize_rows(x: jnp.ndarray) -> jnp.ndarray:
         norm = jnp.linalg.norm(x, axis=1, keepdims=True)
         return x / jnp.maximum(norm, jnp.array(1e-12, dtype=x.dtype))
 
+    @staticmethod
+    @jax.jit
+    def _min_cosine_dists(fake_acts: jnp.ndarray, real_norm: jnp.ndarray) -> jnp.ndarray:
+        """Min cosine distance of each fake row to any (pre-normalized) real row.
+
+        Jitted so the (batch, n_real) distance block fuses into the reduction
+        instead of materializing — with a full-train-split real set that
+        intermediate can run to hundreds of MB per fake batch.
+        """
+        fake_norm = MemorizationInformedFrechetInceptionDistance._normalize_rows(fake_acts).astype(real_norm.dtype)
+        cosine_dist = 1.0 - jnp.abs(fake_norm @ real_norm.T)
+        return jnp.min(cosine_dist, axis=1)
+
     def _update_penalty_from_acts(self, fake_acts: jnp.ndarray) -> None:
         if not self._real_acts:
             raise ValueError("Real features must be cached before updating fake features for MiFID.")
 
-        real_acts = jnp.concatenate(self._real_acts, axis=0)
-        real_norm = self._normalize_rows(real_acts)
-        fake_norm = self._normalize_rows(fake_acts)
+        if self._real_norm_cache is None:
+            # Safe to build once: update() forbids adding reals after the
+            # first fake batch, so _real_acts cannot change while the cache
+            # is live. Normalizing once here (instead of per fake batch) also
+            # keeps host-resident real features (e.g. injected memmaps) from
+            # being re-transferred on every update.
+            if len(self._real_acts) == 1:
+                real_acts = jnp.asarray(self._real_acts[0])
+            else:
+                real_acts = jnp.concatenate([jnp.asarray(a) for a in self._real_acts], axis=0)
+            self._real_norm_cache = nnx.data(self._normalize_rows(real_acts))
 
-        cosine_sim = fake_norm @ real_norm.T
-        cosine_dist = 1.0 - jnp.abs(cosine_sim)
-        min_dist = jnp.min(cosine_dist, axis=1)
+        min_dist = self._min_cosine_dists(fake_acts, self._real_norm_cache)
         self._penalty_sum[...] = self._penalty_sum[...] + jnp.sum(min_dist, dtype=self.metric_dtype)
         self._penalty_count[...] = self._penalty_count[...] + jnp.array(min_dist.shape[0], dtype=jnp.int32)
 
@@ -93,6 +116,15 @@ class MemorizationInformedFrechetInceptionDistance(CachedRealFrechetInceptionDis
 
     def reset(self) -> None:
         super().reset()
+        self._real_norm_cache = nnx.data(None)
+
+    def reset_fake(self) -> None:
+        """Reset the fake accumulators and the memorization penalty.
+
+        The cached real activations and the normalized-real cache are kept, so
+        another generated sample set can be scored against the same real set.
+        """
+        super().reset_fake()
         self._penalty_sum[...] = jnp.array(0.0, dtype=self.metric_dtype)
         self._penalty_count[...] = jnp.array(0, dtype=jnp.int32)
 
